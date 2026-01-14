@@ -6,11 +6,11 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 console.log("Gemini SDK Initializing (Standard). Key present:", !!apiKey);
 
 const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Using Experimental 2.0 as it seems to be the only one accessible for this key
+const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
 // Helper to clean Markdown JSON
 const scrubJSON = (text: string) => {
-  // Removes ```json ... ``` blocks
   return text.replace(/```json\s?|```/g, '').trim();
 };
 
@@ -32,8 +32,9 @@ export const shuffleMeal = async (currentMeal: Partial<Meal>): Promise<Partial<M
       macros: data.macros,
       imageUrl: imageUrl
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini shuffle failed:", error);
+    alert(`AI Error: ${error.message || "Unknown error"}`);
     return currentMeal;
   }
 };
@@ -55,8 +56,9 @@ export const getRecipeDetails = async (mealName: string): Promise<Partial<Meal>>
     const text = response.text();
 
     return JSON.parse(scrubJSON(text));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini recipe details failed:", error);
+    alert(`Recipe Error: ${error.message || "Unknown error"}`);
     return {};
   }
 };
@@ -78,8 +80,9 @@ export const syncGroceryList = async (meals: Meal[]): Promise<GroceryItem[]> => 
       id: `ai-${idx}`,
       checked: false
     }));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini grocery sync failed:", error);
+    alert(`Sync Error: ${error.message}`);
     return [];
   }
 };
@@ -104,8 +107,9 @@ export const generateFullPlan = async (): Promise<Meal[]> => {
       };
     }));
     return planWithImages;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini full plan generation failed:", error);
+    alert(`Plan Gen Error: ${error.message}`);
     return [];
   }
 };
@@ -121,8 +125,9 @@ export const scaleIngredients = async (dishName: string, servings: number, spice
     const text = response.text();
 
     return JSON.parse(scrubJSON(text));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini scaling failed:", error);
+    alert(`Scaling Error: ${error.message}`);
     return [];
   }
 };
@@ -137,8 +142,10 @@ export const classifyGroceryItem = async (input: string): Promise<Partial<Grocer
     const text = response.text();
 
     return JSON.parse(scrubJSON(text));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini classification failed:", error);
+    // Silent fail for classification might be better, but aggressive debug for now
+    // alert(`Classify Error: ${error.message}`);
     return { name: input, quantity: "", category: "Others" };
   }
 };
@@ -163,8 +170,9 @@ export const consolidateGroceryList = async (items: GroceryItem[]): Promise<Groc
       checked: false,
       addedBy: "Swaadly AI"
     }));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini consolidation failed:", error);
+    alert(`Consolidate Error: ${error.message}`);
     return items;
   }
 };
@@ -180,8 +188,9 @@ export const parseZeptoItems = async (input: string): Promise<Array<{ name: stri
     const text = response.text();
 
     return JSON.parse(scrubJSON(text));
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Zepto parsing failed:", error);
+    alert(`Smart Fill Error: ${error.message}`);
     return [];
   }
 };
