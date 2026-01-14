@@ -7,7 +7,7 @@ const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' }
 export const shuffleMeal = async (currentMeal: Partial<Meal>): Promise<Partial<Meal>> => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: `Suggest a unique Indian dish for ${currentMeal.type} that is different from ${currentMeal.name}. 
       Return a JSON object with name, cuisine, and a brief description.`,
       config: {
@@ -51,7 +51,7 @@ export const shuffleMeal = async (currentMeal: Partial<Meal>): Promise<Partial<M
 export const getRecipeDetails = async (mealName: string): Promise<Partial<Meal>> => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: `Provide a detailed recipe for "${mealName}". Include ingredients (with quantities), step-by-step instructions, prep time, spice level, serving size, and a "Chef's Secret Tip" for an authentic flavor. Return as JSON.`,
       config: {
         responseMimeType: "application/json",
@@ -91,7 +91,7 @@ export const syncGroceryList = async (meals: Meal[]): Promise<GroceryItem[]> => 
   try {
     const mealNames = meals.map(m => m.name).join(", ");
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: `Generate a consolidated grocery shopping list for the following Indian meals: ${mealNames}. 
       Categorize items into groups like 'Vegetables', 'Grains', 'Spices', 'Dairy', etc. 
       Return an array of objects with name, quantity, and category.`,
@@ -127,7 +127,7 @@ export const syncGroceryList = async (meals: Meal[]): Promise<GroceryItem[]> => 
 export const generateFullPlan = async (): Promise<Meal[]> => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: `Generate a COMPREHENSIVE 7-day Indian meal plan starting from today. 
       You MUST provide EXACTLY 21 meals in total: 3 meals for each day (Breakfast, Lunch, and Dinner).
       Ensure regional variety and healthy options. 
@@ -181,7 +181,7 @@ export const generateFullPlan = async (): Promise<Meal[]> => {
 export const getDishEnrichment = async (dishName: string): Promise<Partial<Meal>> => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: `Provide structural details for an Indian dish called "${dishName}". 
       Include cuisine type, a short description, nutritional macros, and a "Chef's Secret Tip". 
       Also provide detailed ingredients and instructions. Return as JSON.`,
