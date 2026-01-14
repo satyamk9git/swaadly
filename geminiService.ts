@@ -1,51 +1,35 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Meal, GroceryItem } from './types';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-console.log("Gemini SDK Initializing with key prefix:", apiKey.substring(0, 6));
+console.log("Gemini SDK Initializing (Standard). Key present:", !!apiKey);
 
-const ai = new GoogleGenAI({ apiKey });
+const genAI = new GoogleGenerativeAI(apiKey);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// Helper to clean Markdown JSON
+const scrubJSON = (text: string) => {
+  // Removes ```json ... ``` blocks
+  return text.replace(/```json\s?|```/g, '').trim();
+};
 
 export const shuffleMeal = async (currentMeal: Partial<Meal>): Promise<Partial<Meal>> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{
-        role: 'user', parts: [{
-          text: `Suggest a unique Indian dish for ${currentMeal.type} that is different from ${currentMeal.name}. 
-      Return a JSON object with name, cuisine, and a brief description.` }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            cuisine: { type: Type.STRING },
-            description: { type: Type.STRING },
-            macros: {
-              type: Type.OBJECT,
-              properties: {
-                kcal: { type: Type.NUMBER },
-                carbs: { type: Type.NUMBER },
-                protein: { type: Type.NUMBER },
-                fat: { type: Type.NUMBER }
-              },
-              required: ["kcal", "carbs", "protein", "fat"]
-            }
-          },
-          required: ["name", "cuisine", "macros"]
-        }
-      }
-    });
+    const prompt = `Suggest a unique Indian dish for ${currentMeal.type} that is different from ${currentMeal.name}. 
+    Return a JSON object with keys: name, cuisine, description (short), macros ({kcal, carbs, protein, fat}).`;
 
-    const result = JSON.parse(response.response.text());
-    const imageUrl = await generateDishImage(result.name);
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    const data = JSON.parse(scrubJSON(text));
+    const imageUrl = await generateDishImage(data.name);
+
     return {
-      name: result.name,
-      cuisine: result.cuisine,
-      macros: result.macros,
+      name: data.name,
+      cuisine: data.cuisine,
+      macros: data.macros,
       imageUrl: imageUrl
     };
   } catch (error) {
@@ -56,37 +40,21 @@ export const shuffleMeal = async (currentMeal: Partial<Meal>): Promise<Partial<M
 
 export const getRecipeDetails = async (mealName: string): Promise<Partial<Meal>> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{ role: 'user', parts: [{ text: `Provide a detailed recipe for "${mealName}". Include ingredients (with quantities), step-by-step instructions, prep time, spice level, serving size, and a "Chef's Secret Tip" for an authentic flavor. Return as JSON.` }] }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            ingredients: { type: Type.ARRAY, items: { type: Type.STRING } },
-            instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
-            time: { type: Type.STRING },
-            spice: { type: Type.STRING },
-            serves: { type: Type.STRING },
-            tip: { type: Type.STRING },
-            macros: {
-              type: Type.OBJECT,
-              properties: {
-                kcal: { type: Type.NUMBER },
-                carbs: { type: Type.NUMBER },
-                protein: { type: Type.NUMBER },
-                fat: { type: Type.NUMBER }
-              },
-              required: ["kcal", "carbs", "protein", "fat"]
-            }
-          },
-          required: ["ingredients", "instructions", "time", "spice", "serves", "macros", "tip"]
-        }
-      }
-    });
+    const prompt = `Provide a detailed recipe for "${mealName}". 
+    Return a JSON object with: 
+    - ingredients: string[] (with quantities)
+    - instructions: string[] (step by step)
+    - time: string
+    - spice: string
+    - serves: string
+    - tip: string (Chef's secret)
+    - macros: {kcal, carbs, protein, fat}`;
 
-    return JSON.parse(response.response.text());
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    return JSON.parse(scrubJSON(text));
   } catch (error) {
     console.error("Gemini recipe details failed:", error);
     return {};
@@ -96,32 +64,15 @@ export const getRecipeDetails = async (mealName: string): Promise<Partial<Meal>>
 export const syncGroceryList = async (meals: Meal[]): Promise<GroceryItem[]> => {
   try {
     const mealNames = meals.map(m => m.name).join(", ");
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{
-        role: 'user', parts: [{
-          text: `Generate a consolidated grocery shopping list for the following Indian meals: ${mealNames}. 
-      Categorize items into groups like 'Vegetables', 'Grains', 'Spices', 'Dairy', etc. 
-      Return an array of objects with name, quantity, and category.` }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              quantity: { type: Type.STRING },
-              category: { type: Type.STRING }
-            },
-            required: ["name", "quantity", "category"]
-          }
-        }
-      }
-    });
+    const prompt = `Generate a consolidated grocery shopping list for these Indian meals: ${mealNames}. 
+    Categorize items into: Vegetables, Grains, Spices, Dairy, Meat, Essentials, Others.
+    Return a JSON Array of objects with keys: name, quantity, category.`;
 
-    const rawItems = JSON.parse(response.response.text());
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    const rawItems = JSON.parse(scrubJSON(text));
     return rawItems.map((item: any, idx: number) => ({
       ...item,
       id: `ai-${idx}`,
@@ -135,45 +86,14 @@ export const syncGroceryList = async (meals: Meal[]): Promise<GroceryItem[]> => 
 
 export const generateFullPlan = async (): Promise<Meal[]> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{
-        role: 'user', parts: [{
-          text: `Generate a COMPREHENSIVE 7-day Indian meal plan starting from today. 
-      You MUST provide EXACTLY 21 meals in total: 3 meals for each day (Breakfast, Lunch, and Dinner).
-      Ensure regional variety and healthy options. 
-      Return an array of 21 objects with: day (0-6, where 0 is today, 1 is tomorrow, etc.), type (MUST be 'Breakfast', 'Lunch', or 'Dinner'), name, cuisine, and a short description.` }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              day: { type: Type.NUMBER },
-              type: { type: Type.STRING, enum: ['Breakfast', 'Lunch', 'Dinner'] },
-              name: { type: Type.STRING },
-              cuisine: { type: Type.STRING },
-              description: { type: Type.STRING },
-              macros: {
-                type: Type.OBJECT,
-                properties: {
-                  kcal: { type: Type.NUMBER },
-                  carbs: { type: Type.NUMBER },
-                  protein: { type: Type.NUMBER },
-                  fat: { type: Type.NUMBER }
-                },
-                required: ["kcal", "carbs", "protein", "fat"]
-              }
-            },
-            required: ["day", "type", "name", "cuisine", "macros"]
-          }
-        }
-      }
-    });
+    const prompt = `Generate a 7-day Indian meal plan (21 meals total: Breakfast, Lunch, Dinner for each day).
+    Return a JSON Array of objects with keys: day (number 0-6), type (Breakfast/Lunch/Dinner), name, cuisine, description, macros.`;
 
-    const rawPlan = JSON.parse(response.response.text());
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    const rawPlan = JSON.parse(scrubJSON(text));
     const planWithImages = await Promise.all(rawPlan.map(async (meal: any, idx: number) => {
       const imageUrl = await generateDishImage(meal.name);
       return {
@@ -190,72 +110,17 @@ export const generateFullPlan = async (): Promise<Meal[]> => {
   }
 };
 
-export const getDishEnrichment = async (dishName: string): Promise<Partial<Meal>> => {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{
-        role: 'user', parts: [{
-          text: `Provide structural details for an Indian dish called "${dishName}". 
-      Include cuisine type, a short description, nutritional macros, and a "Chef's Secret Tip". 
-      Also provide detailed ingredients and instructions. Return as JSON.` }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            cuisine: { type: Type.STRING },
-            description: { type: Type.STRING },
-            ingredients: { type: Type.ARRAY, items: { type: Type.STRING } },
-            instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
-            time: { type: Type.STRING },
-            spice: { type: Type.STRING },
-            serves: { type: Type.STRING },
-            tip: { type: Type.STRING },
-            macros: {
-              type: Type.OBJECT,
-              properties: {
-                kcal: { type: Type.NUMBER },
-                carbs: { type: Type.NUMBER },
-                protein: { type: Type.NUMBER },
-                fat: { type: Type.NUMBER }
-              },
-              required: ["kcal", "carbs", "protein", "fat"]
-            }
-          },
-          required: ["cuisine", "description", "ingredients", "instructions", "time", "spice", "serves", "macros", "tip"]
-        }
-      }
-    });
-
-    return JSON.parse(response.response.text());
-  } catch (error) {
-    console.error("Gemini dish enrichment failed:", error);
-    return {};
-  }
-};
-
 export const scaleIngredients = async (dishName: string, servings: number, spice: string): Promise<string[]> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{
-        role: 'user', parts: [{
-          text: `You are a culinary expert. Scale the ingredients for "${dishName}" to serve exactly ${servings} people with a ${spice} spice level. 
-      IMPORTANT: Use ALWAYS definite, kitchen-friendly quantities. ABSOLUTELY NO decimals like 0.75 or 1.5. Use whole numbers (e.g., "1 tsp") or very simple kitchen fractions (e.g., "1 1/2 tbsp") only.
-      Return ONLY a JSON array of strings, where each string is an ingredient with its scaled quantity (e.g., ["200g Paneer", "2 medium onions"]).` }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING }
-        }
-      }
-    });
+    const prompt = `Scale ingredients for "${dishName}" to serve ${servings} (Spice: ${spice}).
+    Use precise full quantities (e.g. "2 cups", "500g"), NO decimals.
+    Return a JSON Array of strings (e.g. ["500g Paneer", "2 Onions"]).`;
 
-    return JSON.parse(response.response.text());
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    return JSON.parse(scrubJSON(text));
   } catch (error) {
     console.error("Gemini scaling failed:", error);
     return [];
@@ -264,32 +129,14 @@ export const scaleIngredients = async (dishName: string, servings: number, spice
 
 export const classifyGroceryItem = async (input: string): Promise<Partial<GroceryItem>> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{
-        role: 'user', parts: [{
-          text: `Classify this grocery item into a category: "${input}". 
-      Return a JSON object with: 
-      - name: The item name in Title Case (e.g., "Chicken", "Red Onion").
-      - quantity: The amount and unit (e.g., "2 kg", "1 packet").
-      - category: One of ['Vegetables', 'Grains & Atta', 'Spices', 'Dairy', 'Meat', 'Essentials', 'Others'].
-      Return ONLY the JSON.` }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            quantity: { type: Type.STRING },
-            category: { type: Type.STRING }
-          },
-          required: ["name", "quantity", "category"]
-        }
-      }
-    });
+    const prompt = `Classify grocery item: "${input}".
+    Return a JSON object with keys: name (Title Case), quantity, category (Vegetables/Grains/Spices/Dairy/Meat/Essentials/Others).`;
 
-    return JSON.parse(response.response.text());
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    return JSON.parse(scrubJSON(text));
   } catch (error) {
     console.error("Gemini classification failed:", error);
     return { name: input, quantity: "", category: "Others" };
@@ -299,37 +146,15 @@ export const classifyGroceryItem = async (input: string): Promise<Partial<Grocer
 export const consolidateGroceryList = async (items: GroceryItem[]): Promise<GroceryItem[]> => {
   try {
     const rawItems = items.map(i => `${i.name} ${i.quantity}`).join(", ");
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{
-        role: 'user', parts: [{
-          text: `Consolidate this grocery list. 
-      - Recognize synonyms like "Aalu" and "Potato" and combine them. 
-      - Sum up quantities for duplicate or similar items (e.g., "2 kg" + "5 kg" = "7 kg").
-      - Categorize everything correctly into: ['Vegetables', 'Grains & Atta', 'Spices', 'Dairy', 'Meat', 'Essentials', 'Others'].
-      - Format names in Title Case.
-      - Return a JSON array of objects with 'name', 'quantity', 'category'.
-      List: ${rawItems}. 
-      Return ONLY the JSON array.` }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              quantity: { type: Type.STRING },
-              category: { type: Type.STRING }
-            },
-            required: ["name", "quantity", "category"]
-          }
-        }
-      }
-    });
+    const prompt = `Consolidate this grocery list. Merge duplicates, sum quantities, name in Title Case.
+    List: ${rawItems}
+    Return a JSON Array of objects with keys: name, quantity, category.`;
 
-    const consolidated = JSON.parse(response.response.text());
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    const consolidated = JSON.parse(scrubJSON(text));
     return consolidated.map((item: any, idx: number) => ({
       id: `consolidated-${Date.now()}-${idx}`,
       name: item.name,
@@ -346,39 +171,23 @@ export const consolidateGroceryList = async (items: GroceryItem[]): Promise<Groc
 
 export const parseZeptoItems = async (input: string): Promise<Array<{ name: string; quantity: string }>> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-pro",
-      contents: [{
-        role: 'user', parts: [{
-          text: `Parse these grocery items from a raw list and separate the name and quantity.
-      Example Input: "Sausage 2 packet", "Paneer 400 g", "Aalu 5kg"
-      Return a JSON array of objects with: 
-      - name: The item name in Title Case (e.g., "Sausage", "Paneer").
-      - quantity: The specific amount and unit (e.g., "2 Packet", "400 G").
-      Input: "${input}"
-      Return ONLY the JSON array.` }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              quantity: { type: Type.STRING }
-            },
-            required: ["name", "quantity"]
-          }
-        }
-      }
-    });
+    const prompt = `Parse grocery list into name and quantity.
+    Input: "${input}"
+    Return a JSON Array of objects with keys: name (Title Case), quantity.`;
 
-    return JSON.parse(response.response.text());
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    return JSON.parse(scrubJSON(text));
   } catch (error) {
     console.error("Gemini Zepto parsing failed:", error);
     return [];
   }
+};
+
+export const getDishEnrichment = async (dishName: string): Promise<Partial<Meal>> => {
+  return getRecipeDetails(dishName);
 };
 
 export const generateDishImage = async (dishName: string): Promise<string> => {
