@@ -1,0 +1,9 @@
+
+{
+  "name": "7-Day Smart Meal Planner",
+  "description": "A high-fidelity meal planning and grocery management application with AI-powered meal shuffling and family synchronization features.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
